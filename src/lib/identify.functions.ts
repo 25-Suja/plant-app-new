@@ -136,6 +136,42 @@ async function identifyWithBotanist(
   region: string,
   plantnet: Candidate[],
 ) {
+  const prompt = BOTANIST_PROMPT(region, images.map((i) => i.organ), plantnet)
+
+  // Free option: use Groq (vision model) when no Anthropic key is configured.
+  if (!process.env.ANTHROPIC_API_KEY && process.env.GROQ_API_KEY) {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'qwen/qwen3.8-27b',
+        max_tokens: 1500,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              ...images.slice(0, 3).map((img) => ({
+                type: 'image_url',
+                image_url: { url: `data:image/jpeg;base64,${stripPrefix(img.data)}` },
+              })),
+              { type: 'text', text: prompt },
+            ],
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(40000),
+    })
+    if (!res.ok) throw new Error(`Groq HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`)
+    const json = (await res.json()) as any
+    const gtext: string = json.choices?.[0]?.message?.content ?? ''
+    const gmatch = gtext.match(/\{[\s\S]*\}/)
+    if (!gmatch) throw new Error('No JSON in Groq response')
+    return aiSchema.parse(JSON.parse(gmatch[0]))
+  }
+
   const { default: Anthropic } = await import('@anthropic-ai/sdk')
   const anthropic = new Anthropic()
   const message = await anthropic.messages.create({
@@ -149,7 +185,7 @@ async function identifyWithBotanist(
             type: 'image' as const,
             source: { type: 'base64' as const, media_type: 'image/jpeg' as const, data: stripPrefix(img.data) },
           })),
-          { type: 'text' as const, text: BOTANIST_PROMPT(region, images.map((i) => i.organ), plantnet) },
+          { type: 'text' as const, text: prompt },
         ],
       },
     ],
@@ -167,14 +203,21 @@ export const identifyPlant = createServerFn({ method: 'POST' })
     const plantnet = await identifyWithPlantNet(data.images)
 
     let botanist: z.infer<typeof aiSchema> | null = null
+    let aiError = ''
     try {
       botanist = await identifyWithBotanist(data.images, region, plantnet)
     } catch (error) {
       console.error('Botanist identification failed', error)
+      aiError = error instanceof Error ? error.message.slice(0, 200) : 'unknown error'
     }
 
     if (!botanist && !plantnet.length) {
-      throw new Error('Identification is unavailable right now. Please try again in a moment.')
+      const keys = [
+        process.env.PLANTNET_API_KEY ? 'PlantNet key: set' : 'PlantNet key: MISSING',
+        process.env.GROQ_API_KEY ? 'Groq key: set' : 'Groq key: missing',
+        process.env.ANTHROPIC_API_KEY ? 'Anthropic key: set' : 'Anthropic key: missing',
+      ].join(', ')
+      throw new Error(`Identification is unavailable right now (${keys}; AI error: ${aiError || 'none'}).`)
     }
 
     if (!botanist) {
