@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as DisposalRouteImport } from './routes/disposal'
 import { Route as MapsRouteImport } from './routes/maps'
+import { Route as ResearchRouteImport } from './routes/research'
 import { Route as ScanRouteImport } from './routes/scan'
 
 const IndexRoute = IndexRouteImport.update({
@@ -35,6 +36,11 @@ const MapsRoute = MapsRouteImport.update({
   path: '/maps',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResearchRoute = ResearchRouteImport.update({
+  id: '/research',
+  path: '/research',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ScanRoute = ScanRouteImport.update({
   id: '/scan',
   path: '/scan',
@@ -46,6 +52,7 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/disposal': typeof DisposalRoute
   '/maps': typeof MapsRoute
+  '/research': typeof ResearchRoute
   '/scan': typeof ScanRoute
 }
 export interface FileRoutesByTo {
@@ -53,6 +60,7 @@ export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/disposal': typeof DisposalRoute
   '/maps': typeof MapsRoute
+  '/research': typeof ResearchRoute
   '/scan': typeof ScanRoute
 }
 export interface FileRoutesById {
@@ -61,14 +69,16 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/disposal': typeof DisposalRoute
   '/maps': typeof MapsRoute
+  '/research': typeof ResearchRoute
   '/scan': typeof ScanRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/disposal' | '/maps' | '/scan'
+  fullPaths: '/' | '/about' | '/disposal' | '/maps' | '/research' | '/scan'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/disposal' | '/maps' | '/scan'
-  id: '__root__' | '/' | '/about' | '/disposal' | '/maps' | '/scan'
+  to: '/' | '/about' | '/disposal' | '/maps' | '/research' | '/scan'
+  id:
+    '__root__' | '/' | '/about' | '/disposal' | '/maps' | '/research' | '/scan'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -76,6 +86,7 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   DisposalRoute: typeof DisposalRoute
   MapsRoute: typeof MapsRoute
+  ResearchRoute: typeof ResearchRoute
   ScanRoute: typeof ScanRoute
 }
 
@@ -109,6 +120,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MapsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/research': {
+      id: '/research'
+      path: '/research'
+      fullPath: '/research'
+      preLoaderRoute: typeof ResearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/scan': {
       id: '/scan'
       path: '/scan'
@@ -124,6 +142,7 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   DisposalRoute: DisposalRoute,
   MapsRoute: MapsRoute,
+  ResearchRoute: ResearchRoute,
   ScanRoute: ScanRoute,
 }
 export const routeTree = rootRouteImport
