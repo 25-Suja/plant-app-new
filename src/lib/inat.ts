@@ -2,6 +2,8 @@
 // The public iNaturalist API allows browser requests, so these run client-side.
 
 import { isConfirmedInvasive } from './plants'
+import { timeoutSignal } from './safe'
+import { countryCode } from './countries'
 
 const API = 'https://api.inaturalist.org/v1'
 const ADMINISTRATIVE_PLACE_TYPE = 8
@@ -9,11 +11,11 @@ const ADMINISTRATIVE_PLACE_TYPE = 8
 export type Place = { id: number; name: string; displayName: string }
 export type MapStatus = 'native' | 'introduced' | 'invasive' | 'unknown'
 
-async function getJson(url: string, retries = 2): Promise<any> {
+export async function getJson(url: string, retries = 2): Promise<any> {
   let lastError: unknown
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+      const res = await fetch(url, { signal: timeoutSignal(15000) })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return await res.json()
     } catch (error) {
@@ -24,7 +26,7 @@ async function getJson(url: string, retries = 2): Promise<any> {
   throw lastError
 }
 
-const qs = (params: Record<string, string | number>) =>
+export const qs = (params: Record<string, string | number>) =>
   new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString()
 
 export async function searchLocation(query: string): Promise<Place[]> {
@@ -193,6 +195,122 @@ export async function buildPlantMap(
     scientificName,
     commonName: taxon.preferred_common_name,
     regions,
+    message,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// World map: country-level + state/province-level status, straight from iNaturalist.
+// Nothing is guessed: a place is colored only when iNaturalist lists a status for it.
+// ---------------------------------------------------------------------------
+
+
+export type CountryStatus = { iso: string; name: string; status: MapStatus; raw: string }
+
+export type WorldMapResult = {
+  scientificName: string
+  commonName?: string
+  taxonId: number
+  countries: CountryStatus[]
+  regions: MapRegion[]
+  unmatched: string[]
+  message: string
+}
+
+function toWorldStatus(recorded: string | null, scientificName: string): MapStatus {
+  if (recorded === 'native' || recorded === 'endemic') return 'native'
+  if (recorded === 'invasive') return 'invasive'
+  if (recorded === 'introduced' || recorded === 'naturalized' || recorded === 'naturalised') {
+    return isConfirmedInvasive(scientificName) ? 'invasive' : 'introduced'
+  }
+  return 'unknown'
+}
+
+export async function buildWorldMap(
+  plantName: string,
+  onProgress?: (message: string) => void,
+): Promise<WorldMapResult> {
+  const query = plantName.trim()
+  const taxa = await getJson(`${API}/taxa?${qs({ q: query, per_page: 1 })}`)
+  const taxon = taxa.results?.[0]
+  if (!taxon?.id) throw new Error(`No iNaturalist taxon found for "${query}".`)
+  const scientificName: string = taxon.name ?? query
+
+  onProgress?.(`Found ${scientificName}. Reading iNaturalist status records worldwide…`)
+  const detail = await getJson(`${API}/taxa/${taxon.id}`)
+  const listedTaxa: any[] = detail.results?.[0]?.listed_taxa ?? []
+
+  const listed = new Map<number, string>()
+  const countries = new Map<string, CountryStatus>()
+  const unmatched: string[] = []
+  for (const lt of listedTaxa) {
+    const place = lt.place
+    const id: number | undefined = place?.id ?? lt.place_id
+    const means = lt.establishment_means ? String(lt.establishment_means).toLowerCase() : null
+    if (!id || !means) continue
+    listed.set(id, means)
+    const name: string = place?.name ?? place?.display_name ?? ''
+    const iso = name ? countryCode(name) : null
+    if (iso) {
+      const status = toWorldStatus(means, scientificName)
+      const prev = countries.get(iso)
+      // If a country has several records, keep the most specific signal: invasive > introduced > native > unknown.
+      const rank: Record<MapStatus, number> = { invasive: 3, introduced: 2, native: 1, unknown: 0 }
+      if (!prev || rank[status] > rank[prev.status]) countries.set(iso, { iso, name, status, raw: means })
+    } else if (place?.admin_level === 0 && name) {
+      unmatched.push(name)
+    }
+  }
+
+  // State / province polygons from observation locations (as before), but never fatal.
+  let regions: MapRegion[] = []
+  let failed = 0
+  try {
+    onProgress?.('Loading state and province boundaries…')
+    const obs = await getJson(
+      `${API}/observations?${qs({ taxon_id: taxon.id, geo: 'true', per_page: 200, order: 'desc', quality_grade: 'research' })}`,
+    )
+    const counts = new Map<number, number>()
+    for (const o of obs.results ?? []) for (const id of o.place_ids ?? []) counts.set(id, (counts.get(id) ?? 0) + 1)
+    const topPlaces = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 100).map(([id]) => id)
+    const places: any[] = []
+    for (let i = 0; i < topPlaces.length; i += 25) {
+      const json = await getJson(`${API}/places/${topPlaces.slice(i, i + 25).join(',')}`)
+      places.push(...(json.results ?? []))
+    }
+    const admin = places.filter((p) => p.place_type === ADMINISTRATIVE_PLACE_TYPE && p.geometry_geojson?.coordinates)
+    onProgress?.(`Checking status in ${admin.length} states / provinces…`)
+    const { results, failed: f } = await pool(admin, 6, async (p) => {
+      const recorded = listed.get(p.id) ?? (await lookupAtPlace(scientificName, p.id))
+      return {
+        placeId: p.id,
+        name: p.display_name ?? p.name,
+        status: toWorldStatus(recorded, scientificName),
+        geometry: p.geometry_geojson,
+      } satisfies MapRegion
+    })
+    failed = f
+    regions = results.filter((r): r is MapRegion => !!r)
+  } catch {
+    // Country colors are still shown.
+  }
+
+  const list = [...countries.values()]
+  if (!list.length && !regions.length) {
+    throw new Error(
+      `iNaturalist has no recorded native/introduced status for ${scientificName}. Nothing is shown rather than guessing.`,
+    )
+  }
+  const coloured = list.filter((c) => c.status !== 'unknown').length
+  let message = `${scientificName}: ${coloured} countries and ${regions.filter((r) => r.status !== 'unknown').length} states/provinces colored from iNaturalist status records.`
+  if (failed) message += ` ${failed} region request(s) failed.`
+  return {
+    scientificName,
+    commonName: taxon.preferred_common_name,
+    taxonId: taxon.id,
+    countries: list,
+    regions,
+    unmatched,
     message,
   }
 }

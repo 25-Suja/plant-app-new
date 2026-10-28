@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
   ArrowRight,
+  BookOpen,
   Camera,
   Hammer,
   Home,
@@ -23,6 +24,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { safeStorage } from '@/lib/safe'
 
 const EMAIL_KEY = 'glowbots:email'
 const INTRO_KEY = 'glowbots:intro-complete'
@@ -63,6 +65,7 @@ const NAV = [
   { to: '/scan', label: 'Scan a Plant', icon: Camera },
   { to: '/disposal', label: 'Disposal', icon: Recycle },
   { to: '/maps', label: 'Maps', icon: Map },
+  { to: '/research', label: 'Research', icon: BookOpen },
   { to: '/about', label: 'About Us', icon: Info },
 ] as const
 
@@ -123,9 +126,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [email, setEmail] = useState('')
 
   useEffect(() => {
-    const savedEmail = localStorage.getItem(EMAIL_KEY) ?? ''
+    const savedEmail = safeStorage.get(EMAIL_KEY) ?? ''
     setEmail(savedEmail)
-    if (localStorage.getItem(INTRO_KEY) === '1') setGate('ready')
+    if (safeStorage.get(INTRO_KEY) === '1') setGate('ready')
     else setGate(savedEmail ? 'intro' : 'email')
   }, [])
 
@@ -140,7 +143,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return (
       <EmailEntry
         onSubmit={(value) => {
-          localStorage.setItem(EMAIL_KEY, value)
+          safeStorage.set(EMAIL_KEY, value)
           setEmail(value)
           setGate('intro')
         }}
@@ -152,7 +155,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <Introduction
         email={email}
         onComplete={() => {
-          localStorage.setItem(INTRO_KEY, '1')
+          safeStorage.set(INTRO_KEY, '1')
           setGate('ready')
         }}
       />
@@ -186,7 +189,7 @@ function EmailEntry({ onSubmit }: { onSubmit: (email: string) => void }) {
       <div className="grid w-full max-w-5xl gap-7 md:grid-cols-[1.2fr_1fr] items-stretch">
         <section className="relative overflow-hidden rounded-[28px] p-9 text-white shadow-xl">
           <img
-            src="/.netlify/images?url=/img/woodland.png&w=1100&fm=webp"
+            src="/img/woodland-1100.webp"
             alt=""
             className="absolute inset-0 size-full object-cover"
           />
@@ -335,7 +338,7 @@ function Introduction({ email, onComplete }: { email: string; onComplete: () => 
       </p>
       <div className="relative w-full max-w-3xl overflow-hidden rounded-3xl shadow-xl">
         <img
-          src="/.netlify/images?url=/img/woodland.png&w=1100&fm=webp"
+          src="/img/woodland-1100.webp"
           alt=""
           className="absolute inset-0 size-full object-cover scale-110 transition-transform duration-[4000ms]"
           style={{ transform: `scale(${1.1 + index * 0.04})` }}

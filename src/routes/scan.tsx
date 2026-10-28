@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { identifyPlant, type Identification, type Organ } from '@/lib/identify.functions'
 import { canvasToJpeg, drawToCanvas, enhanceForField, fileToImage, measureQuality } from '@/lib/image'
+import { uuid } from '@/lib/safe'
 import { checkNativeStatus, searchLocation, type Place } from '@/lib/inat'
 import { findGuide, isConfirmedInvasive } from '@/lib/plants'
 import { cn } from '@/lib/utils'
@@ -109,7 +110,7 @@ function ScanPage() {
   }
 
   const addShot = (photo: CapturedPhoto) => {
-    setShots((prev) => [...prev, { ...photo, id: crypto.randomUUID(), organ }].slice(0, MAX_SHOTS))
+    setShots((prev) => [...prev, { ...photo, id: uuid(), organ }].slice(0, MAX_SHOTS))
     setResult(null)
     setStatus('')
     // Suggest the next most useful plant part.

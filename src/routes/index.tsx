@@ -33,8 +33,8 @@ function Home() {
     <div>
       <section className="relative isolate overflow-hidden">
         <img
-          src="/.netlify/images?url=/img/woodland.png&w=1600&fm=webp"
-          srcSet="/.netlify/images?url=/img/woodland.png&w=800&fm=webp 800w, /.netlify/images?url=/img/woodland.png&w=1600&fm=webp 1600w"
+          src="/img/woodland-1600.webp"
+          srcSet="/img/woodland-800.webp 800w, /img/woodland-1600.webp 1600w"
           sizes="100vw"
           alt="A shaded woodland trail with a red-berried Japanese barberry shrub in the foreground"
           className="absolute inset-0 -z-10 size-full object-cover"
